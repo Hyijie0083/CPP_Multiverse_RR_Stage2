@@ -8,6 +8,6 @@ Under discussion, the following is our workflow:
   1) preprocessed data and make into BIDS standard;
   2) extract response-locked ERP accordding to concrete experiments
   3) extract ams, pams and slopes etc. for multiple modeling
-Note that some preprocessed datasets can not be processed into BIDS.
 
+Note that some preprocessed datasets can not be processed into BIDS.
 All scripts for EEG based on mne in python.
