@@ -48,7 +48,7 @@ extract_vcoef <- function(suffix, col_index = 1) {
 # 3. Use function to all models
 df_list <- map_dfr(suffixes, ~ extract_vcoef(.x, col_index = 1))
 
-# 4. 添加可读标签
+# 4. add labels in plot
 df_long <- df_list %>%
   mutate(
     feature = case_match(suffix,
