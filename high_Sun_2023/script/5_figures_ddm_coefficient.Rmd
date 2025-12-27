@@ -86,12 +86,12 @@ stats_df <- df_long %>%
 # 6. Customize labels for plot
 pipeline_labels <- data.frame(
   pipeline = stats_df$pipeline,
-  label = c('Trialwise Build-up rate',
-            'Trialwise Amplitude',
-            'Trialwise Peak amplitude',
+  label = c('Trialwise Amplitude',
             'Binwise Build-up rate',
             'Binwise Amplitude',
-            'Binwise Peak amplitude')
+            'Trialwise Build-up rate',
+            'Binwise Peak amplitude',
+            'Trialwise Peak amplitude')
 )
 
 # 7. plot
@@ -130,14 +130,14 @@ figure_main <- ggplot(df_long, aes(x = v)) +
 figure_main+ggview::canvas(width = 200,height = 200*2/3, units = "mm", dpi = 320)
 
 # Save main effect plot
-#ggplot2::ggsave(
-#  filename = '../figure/main_effect.jpg',
-#  plot = figure_main,                
-#  width = 200,                       
-#  height = 200*2/3,                       
-#  units = "mm",
-#  dpi = 320
-#)
+ggplot2::ggsave(
+  filename = '../figure/main_effect.jpg',
+  plot = figure_main,                
+  width = 200,                       
+  height = 200*2/3,                       
+  units = "mm",
+  dpi = 320
+)
 
 
 ```
@@ -206,11 +206,12 @@ for (col_interaction in 2:4){
   pipeline_labels <- data.frame(
     pipeline = stats_df$pipeline,
     label = c('Trialwise Build-up rate',
-              'Trialwise Amplitude',
-              'Trialwise Peak amplitude',
               'Binwise Build-up rate',
+              'Trialwise Peak amplitude',
+              'Binwise Peak amplitude',
               'Binwise Amplitude',
-              'Binwise Peak amplitude')
+              'Trialwise Amplitude'
+              )
   )
 
   # 7. plot
@@ -253,17 +254,17 @@ for (col_interaction in 2:4){
 print(plot_list)
 
 # Save interaction effect plots
-#for (i in seq_along(plot_list)) {
-#  col_idx <- i + 1  # 因为 col_interaction 从 2 开始：i=1 → col=2
-#  filename <- glue::glue("../figure/interaction_effect_{col_idx}.png")
-#  ggsave(
-#    filename = filename,
-#    plot = plot_list[[i]],
-#    width = 200,                       
-#    height = 200*2/3,                       
-#    units = "mm",
-#    dpi = 320
-# )
-#}
+for (i in seq_along(plot_list)) {
+  col_idx <- i + 1  # 因为 col_interaction 从 2 开始：i=1 → col=2
+  filename <- glue::glue("../figure/interaction_effect_{col_idx}.png")
+  ggsave(
+    filename = filename,
+    plot = plot_list[[i]],
+    width = 200,                       
+    height = 200*2/3,                       
+    units = "mm",
+    dpi = 320
+ )
+}
 
 ```
