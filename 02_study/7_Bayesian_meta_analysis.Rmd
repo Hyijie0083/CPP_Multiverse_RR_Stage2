@@ -1,0 +1,297 @@
+```{r}
+library(RoBMA)
+library(rjags)
+library(bruceR)
+library(glue)
+library(BayesTools)
+
+library(progress)
+```
+
+```{}
+# pseudo code
+data_full_level = {}
+for pipline:
+  data_RoBMA_pipe = {}
+  for 一个level的数据集：
+    path = 
+    read.csv
+    $mean
+    $std
+    name = 
+    data_RoBMA_pipe =
+  
+  fit_pipeline = 
+  mu = fit_pipeline$RoBMA$posteriors$mu
+  data_full_level = data.frame(mu = mu,
+                               suffix = pipeline)
+  
+
+
+```
+
+```{r}
+# Set prior for RoBMA
+priors_effect <- prior("normal", parameters = list(mean = 0, sd = 1))
+priors_heterogeneity_invgamma <- prior("invgamma", parameters = list(shape = 1, scale = 0.15))
+
+suffixes <- c("slps", "ams")#, "pams", "slps_bin", "ams_bin", "pams_bin")
+datasets <- c('high_Sun_2023', 'high_Moerel_2024')
+data_full <- list()
+for (pipeline in suffixes) {
+  data_RoBMA_pipe <- data.frame()
+  
+  for (dataset in datasets) {
+    path <- glue("./{dataset}/results/ddm/m2_{pipeline}_posterior.csv")
+    df <- read.csv(path)
+    
+    # Extract mean and std for posterior
+    mean <- mean(df[,1])   
+    sd   <- sd(df[,1])
+    name <- dataset
+    
+    data_RoBMA_pipe <- rbind(data_RoBMA_pipe,
+                             data.frame(mean = mean,
+                                        se   = sd,
+                                        name = name))
+  }
+  
+  # Fit RoBMA
+  fit_RoBMA <- RoBMA(d = data_RoBMA_pipe$mean, se = data_RoBMA_pipe$se, study_names = data_RoBMA_pipe$name, 
+               priors_effect = priors_effect,
+               priors_heterogeneity = priors_heterogeneity_invgamma,
+               priors_bias = set_default_priors("bias", rescale = 1),
+               sample = 500, burnin = 100,
+               seed = 42
+               )
+  
+  mu = extract_posterior(fit_RoBMA, parameter = "mu", conditional = FALSE)
+  data_full[[pipeline]] <- data.frame(mu = mu,
+                                    suffix = pipeline)
+}
+
+mu_samples <- RoBMA:::.extract_posterior.RoBMA(fit_RoBMA, "mu", conditional = FALSE)$mu
+BayesTools::plot_posterior(
+  samples = list(mu = mu_samples),
+  parameter = "mu",
+  plot_type = "ggplot"
+)
+
+plot(fit_RoBMA, parameter = "mu", xlim = c(-0.5, 1))
+
+n_zeros      <- sum(mu_samples == 0)
+total_n      <- length(mu_samples)
+prop_zeros   <- n_zeros / total_n
+```
+
+```{r}
+
+summary(fit_RoBMA)
+
+```
+
+
+```{r}
+data_full_plot <- do.call(rbind, data_full)
+df_long <- data_full_plot %>%
+  dplyr::mutate(
+    feature = dplyr::case_match(suffix,
+                         "slps" ~ "Build-up rate",
+                         "ams" ~ "Amplitude",
+                         "pams" ~ "Peak amplitude",
+                         "slps_bin" ~ "Build-up rate",
+                         "ams_bin" ~ "Amplitude",
+                         "pams_bin" ~ "Peak amplitude"),
+    type = dplyr::case_when(
+      suffix %in% c("slps", "ams", "pams") ~ "Trial",
+      suffix %in% c("slps_bin", "ams_bin", "pams_bin") ~ "Bin"
+    ),
+    pipeline = paste(type, feature, sep = "-")
+  ) %>%
+  dplyr::mutate(
+    feature = factor(feature, levels = c("Build-up rate", "Amplitude", "Peak amplitude")),
+    type = factor(type, levels = c("Trial", "Bin")),
+    pipeline = factor(pipeline, levels = unique(pipeline))
+  )
+
+# 5. Calculate mean and CI
+stats_df <- df_long %>%
+  group_by(pipeline) %>%
+  summarise(
+    percentile_2.5 = quantile(mu, 0.025, na.rm = TRUE),
+    percentile_97.5 = quantile(mu, 0.975, na.rm = TRUE),
+    mean = mean(mu, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(mean)
+
+# 6. Customize labels for plot
+pipeline_labels <- data.frame(
+  pipeline = stats_df$pipeline,
+  label = c('Trialwise Build-up rate',
+            'Trialwise Amplitude',
+            'Trialwise Peak amplitude',
+            'Binwise Build-up rate',
+            'Binwise Amplitude',
+            'Binwise Peak amplitude')
+)
+
+# 7. plot
+figure_main <- ggplot(df_long, aes(x = mu)) +
+  geom_density() +
+  geom_segment(
+    data = stats_df,
+    aes(x = percentile_2.5, y = 0, xend = percentile_97.5, yend = 0),
+    linewidth = 2, color = "lightblue"
+  ) +
+  geom_point(
+    data = stats_df,
+    aes(x = mean, y = 0), size = 1, color = "black"
+  ) +
+  geom_vline(xintercept = 0, color = "gray") +
+  facet_grid(rows = vars(pipeline), scales = "free", switch = "y") +
+  labs(y = 'Posterior probability', x = 'Coefficient of CPP effect on drift rate') +
+  theme_bw() +
+  coord_cartesian(xlim = c(-0.05, 0.05), clip = "off") +
+  theme(
+    axis.text = element_text(size = 8),
+    panel.grid = element_blank(),
+    text = element_text(family = 'serif'),
+    panel.spacing = unit(0.2, "cm"),
+    strip.text.y = element_blank(),
+    strip.placement = "outside",
+    strip.background = element_blank(),
+    plot.margin = margin(r = 200)
+  ) +
+  geom_text(
+    data = pipeline_labels,
+    aes(x = Inf, y = 0, label = label),
+    hjust = -0.1, vjust = -2, size = 4, family = 'serif'
+  )
+
+figure_main+ggview::canvas(width = 200,height = 200*2/3, units = "mm", dpi = 320)
+
+
+```
+
+
+```{r}
+
+p <- plot(fit_RoBMA, parameter = "mu", plot_type = "ggplot")
+if ("ggplot" %in% class(p)) {
+  p + 
+    theme_bw() +
+    coord_cartesian(xlim = c(-1, 1)) +
+    labs(x = "Coefficient", y = "a")
+}
+p
+```
+
+
+
+
+
+```{r}
+results <- data.frame(
+  mean = numeric(0),
+  sd   = numeric(0),
+  name = character(0),
+  stringsAsFactors = FALSE
+)
+summary(fit_RoBMA)
+```
+
+```{r}
+path_data = './high_Moerel_2024/results/ddm/m2_ams_posterior.csv'
+data = read.csv(path_data)
+
+test_mean = mean(data$v_ams)
+test_std = sd(data$v_ams)
+
+n <- "high_Moerel"
+
+results <- rbind(results, data.frame(mean = test_mean, sd = test_std, name = n))
+
+?RoBMA
+```
+
+```{r}
+priors_effect <- prior("normal", parameters = list(mean = 0, sd = 1))
+priors_heterogeneity_invgamma <- prior("invgamma", parameters = list(shape = 1, scale = 0.15))
+
+fit <- RoBMA(d = results$mean, se = results$sd, study_names = results$name, seed = 1,
+             priors_effect = priors_effect,
+             priors_heterogeneity = priors_heterogeneity_invgamma,
+             priors_bias = set_default_priors("bias", rescale = 1)
+             )
+
+sum(is.na(results$mean))
+sum(is.nan(results$mean))
+sum(is.infinite(results$mean))
+```
+
+```{R}
+summary(fit)
+
+plot(fit, parameter = "mu", xlim = c(-0.5, 0.5))
+
+plot(fit, parameter = "tau")
+
+plot(fit, parameter = "weightfunction", rescale_x = TRUE)
+
+plot(fit, parameter = "PET-PEESE", xlim = c(0, 0.25))
+
+forest(fit)
+
+diagnostics(fit, parameter = "mu", type = "chains", show_models = 36)
+plot_models(fit, conditional = TRUE)
+
+model_sum = summary(fit, type = 'models')
+
+RoBMA:::plot.RoBMA
+mu_samples <- RoBMA:::.extract_posterior.RoBMA(fit, "mu", condition=FALSE)$mu
+RoBMA::prior
+
+mu_samples
+a = mean(mu_samples) 
+b = quantile(mu_samples, c(0.025, 0.975)) 
+
+ a = fit$RoBMA$posteriors$mu
+
+ 
+ sum_fit <- summary(fit)
+sum_fit$estimates
+
+# 提取 mu 的摘要（通常在第一个参数）
+mu_summary <- sum_fit$summary_parameters[
+  sum_fit$summary_parameters$Parameter == "mu", 
+]
+summary(a)
+
+df_mu <- data.frame(mu = a)
+
+# 计算统计量（注意：quantile 默认忽略 NA，但这里没有 NA）
+percentile_2.5  <- quantile(df_mu$mu, 0.025)
+percentile_97.5 <- quantile(df_mu$mu, 0.975)
+mean_value      <- mean(df_mu$mu)
+
+
+figure <- ggplot(df_mu, aes(x = df_mu[, 1])) +
+  geom_density() +
+  geom_segment(aes(x = percentile_2.5, y = 0, xend = percentile_97.5, yend = 0),linewidth = 2,color = "lightblue") +
+  geom_point(aes(x = mean_value, y = 0),size = 1,color = "black") +geom_vline(xintercept = 0, color = "gray")+
+  labs(y = 'Posterior probability', x = 'Coefficient of CPP effect on drift rate') +
+  theme_bw() +
+  coord_cartesian(xlim = c(-0.001, 0.012)) +
+  theme(axis.text = element_text(size = 6),panel.grid = element_blank(),text = element_text(family = 'serif'),panel.spacing = unit(0.1, "cm"))+
+  ggview::canvas(width = 200,height = 200*2/3, units = "mm", dpi = 320)
+
+print(figure)
+```
+
+```{r}
+plot(fit, parameter = "mu")
+
+plot(fit, parameter = "mu", conditional = TRUE)
+
+```

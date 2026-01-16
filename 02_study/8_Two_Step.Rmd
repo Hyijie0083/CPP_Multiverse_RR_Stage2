@@ -1,0 +1,54 @@
+
+```{r}
+# Load required packages using pacman
+require(pacman)
+p_load("boot", "tidyverse", "reshape2", "brms", "bruceR", "BayesFactor", "nlme", "lme4", "patchwork")
+set.seed(123)  # Set a random seed for reproducibility
+
+```
+
+```{r}
+# 1. 定义 corr.stats 函数
+corr.stats <- function(data, indices) {
+  d <- data[indices, ]  # 提取 bootstrap 样本
+  cor(d[, 1], d[, 2])   # 计算两列的相关系数
+}
+```
+
+```{r load data}
+# Read the preprocessed data from a CSV file
+df <- read.csv('/Users/hyijie/Desktop/data4two_steps.csv')
+
+```
+
+
+```{r cor for slp and v}
+pipeline <- names(df)[4:9]
+plots <- vector("list", length(pipeline))
+for (pipe in pipeline) {
+  # Extract the relevant columns (slp and v) for analysis
+  data <- data.frame(df[,c(pipe,'v_posterior')])
+  # Perform bootstrapping to estimate the correlation and its confidence intervals
+  b <- boot(data, statistic = corr.stats, R = 1000)  # Perform 1000 bootstrap resamples
+  conf.int <- boot.ci(b, type = "basic")[['basic']]  # Calculate the basic confidence interval
+  # Calculate the observed correlation between slp and v
+  corr.observed <- corr.stats(data, 1:nrow(data))
+  # Create a density plot of the bootstrapped correlation statistics
+  density_data <- density(data.frame(b$t)$b.t)
+  # Plot the bootstrapped correlation distribution with confidence intervals
+  p <- ggplot(data.frame(b$t), aes(x = b.t)) +
+    geom_density() +  # Plot the density curve
+    geom_vline(xintercept = 0,  # Add a vertical line at 0 for reference
+               color = "grey",
+               linetype = 2) +
+    geom_area(data = subset(as.data.frame(density_data[c("x", "y")]), x >= conf.int[4] & x <= conf.int[5]),
+              aes(x = x, y = y),  # Highlight the area between the confidence intervals
+              fill = "lightblue", 
+              alpha = 0.5) +
+    theme_bw()  # Use a clean black and white theme
+  
+  plots[[pipe]] <- p
+}
+print(plots)
+```
+
